@@ -10,6 +10,7 @@
 
 (def CONTENT-TYPE "Content-Type")
 (def JSON-HEADER "application/json") 
+(def OK 200)
 
 (defn wrap-gzip-request [handler]
   (fn [req]
@@ -37,14 +38,22 @@
    (ring-resp/response "")
    (ring-resp/status 204)))
 
+(defn json-response
+  ([json] (json-response json OK))
+  ([json, status]
+     (-> (ring-resp/response (json/generate-string json))
+         (ring-resp/status (Integer. status))
+         (ring-resp/header CONTENT-TYPE JSON-HEADER))))
+  
+
 (defn json-api
-  "a middleware of json API."
-  [handler]
-  (fn [request]
-    (if-let [content-type (get-in request [:headers "content-type"])]
-      (when (= content-type "application/json")
-        (let [response (handler (assoc-in request :json-body (json/parse-stream (io/reader (:body request)) true)))]
-          (if (map? response)
-            nil nil)
-          ))
-        ))) 
+    "a middleware of json API."
+    [handler]
+    (fn [request]
+      (if-let [content-type (get-in request [:headers "content-type"])]
+        (when (= content-type "application/json")
+          (let [response (handler (assoc-in request :json-body (json/parse-stream (io/reader (:body request)) true)))]
+            (if (map? response)
+              nil nil)
+            ))
+        )))

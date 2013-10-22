@@ -1,0 +1,12 @@
+[
+{
+    "instance" : "tsdinstance1",
+    "timestamp" : "2012-01-19T19:05:01-05:00",
+    "values" : {"timing":100}
+},
+{
+    "instance" : "tsdinstance2",
+    "timestamp" : "2012-01-19T19:05:01-05:00",
+    "values" : {"timing":100}
+}
+]

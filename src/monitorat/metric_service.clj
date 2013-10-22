@@ -38,8 +38,8 @@
   "write chunk to local file system"
   [chunk, root]
   (log/debug "writing chunk to file system for key" (:key chunk) ", chunk size is" (:size chunk))
-  (let [path (str root "/" ) 
-        file-name (str (:key chunk) "-part-" (chunk-unique-id chunk))]
+  (let [path (str root "/" (str/replace (:key chunk) "-" "/")) 
+        file-name (str (str/replace (:key chunk) "-" "") "-part-" (chunk-unique-id chunk))]
     (when (not (.exists (io/file path)))
       (.mkdirs (io/file path)))
     (with-open [o (io/output-stream (io/file path file-name))]
@@ -68,8 +68,13 @@
      )))
 
 ;;; REST API ;;;
+(defn auth-middleware [handler]
+  (fn [req]
+    (handler (assoc req :user-id "user-001"))
+    ))
+
 (defn- validate-tsd [tsd]
-  true)
+  (and (:id tsd) (:value tsd) (number? (:value tsd))))
 
 (defn- format-minute [tsd]
   (let [datetime (->
@@ -79,31 +84,44 @@
                   )]
     (.print (DateTimeFormat/forPattern "yyyy-MM-dd-HH-mm") datetime)))
 
-(defn- receive-tsds [buffer tsd-seq]
-  (doseq [tsd tsd-seq]
-    (try
-      (if (validate-tsd tsd)
-        (when-not (chunk-buffer/write buffer
-                                    (format-minute tsd)
-                                    (json/generate-string tsd))
-          (log/warn "discart TSD item"))
-        (log/warn "discart illegal TSD:" tsd))
-      (catch Exception e (log/error e))))
-  true)
+(defn- receive-tsds [buffer user-id tsd-seq]
+  (letfn [(reduce-fn [{:keys [succ, failures] :as result} tsd]
+            (try
+              (cond
+               (not (validate-tsd tsd))
+               (do
+                 (log/warn "discard TSD because illegal format:" tsd)
+                 (update-in result [:failure, :illegal-format] #(if % (inc %) 1)))
+               (not (chunk-buffer/write buffer
+                                        (format-minute tsd)
+                                        (json/generate-string
+                                         (assoc
+                                             (merge {:timestamp "default-timestamp"} (select-keys tsd [:id, :value, :timestamp]))
+                                           :user-id user-id)
+                                         )))
+               (do
+                 (log/warn "discard TSD because failed push to buffer")
+                 (update-in result [:failure, :service-internal-error] #(if % (inc %) 1)))
+               :else (update-in result [:success] inc))
+              (catch Exception e (update-in result [:failure, :service-internal-error] #(if % (inc %) 1)))
+              )
+            )]
+    
+    (reduce reduce-fn {:success 0, :failure {}} tsd-seq)))
 
 (defn- mk-app [buffer]
   (let [app-routes (routes
-          (POST "/spy/tsds" {body :body}
+          (POST "/spy/tsds" {body :body, user-id :user-id}
                 (try
                   (if-let [tsd-seq (json/parse-stream (io/reader body) true)]
-                    (do (receive-tsds buffer tsd-seq)
-                        (restful/success))
+                    (restful/json-response (receive-tsds buffer user-id tsd-seq))
                     (restful/internal-error))
                   (catch JsonParseException e (restful/bad-request "bad-json-format" "content maybe is not illegal json format"))))
           )]
     (->
      (handler/api app-routes)
      (restful/wrap-gzip-request)
+     (auth-middleware)
      )))
 
 
