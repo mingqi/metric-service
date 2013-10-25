@@ -12,6 +12,8 @@
             [clojure.tools.nrepl.server :as nrepl]
             [clojure.string :as str]
             [clj-chunk-buffer.core :as chunk-buffer]
+            [clj-time.core :as time]
+            [clj-time.format :as time-format]
             )
   (:use [compojure.core]
         [clojure.tools.cli :only [cli]])
@@ -24,6 +26,9 @@
            [org.joda.time.format DateTimeFormat ISODateTimeFormat]
            [java.util UUID]
            ))
+
+(def DEFAULT-TZ (time/time-zone-for-id "Asia/Shanghai"))
+
 
 ;;; buffer output ;;;
 (extend-type String
@@ -70,43 +75,72 @@
 ;;; REST API ;;;
 (defn auth-middleware [handler]
   (fn [req]
-    (handler (assoc req :user-id "user-001"))
+    (handler (assoc req :user-id "user001"))
     ))
 
-(defn- validate-tsd [tsd]
-  (and (:id tsd) (:value tsd) (number? (:value tsd))))
+(defn- parse-iso [t]
+  (try
+    (time-format/parse (:date-time-parser time-format/formatters) t)
+    (catch Exception e
+      )))
 
-(defn- format-minute [tsd]
-  (let [datetime (->
-                  (ISODateTimeFormat/dateTimeParser)
-                  (.parseDateTime  (:timestamp tsd))
-                  (.withZone (DateTimeZone/forID "Asia/Shanghai"))
-                  )]
-    (.print (DateTimeFormat/forPattern "yyyy-MM-dd-HH-mm") datetime)))
+(defn- format-iso [t]
+  (time-format/unparse
+   (time-format/formatter "yyyy-MM-dd'T'HH:mm:ssZ" DEFAULT-TZ) t
+   ))
+
+(defn- format-minute [t]
+  (time-format/unparse (time-format/formatter "yyyy-MM-dd-HH-mm"
+                                              (time/time-zone-for-id "Asia/Shanghai"))
+                       (parse-iso t)))
+
+
+
+(defn- now-with-isoformat []
+  (time-format/unparse
+   (time-format/formatter "yyyy-MM-dd'T'HH:mm:ssZ" DEFAULT-TZ)
+   (time/now)
+   ))
+
+(defn- validate-tsd [user-id tsd]
+  (when (and (:metric-name tsd)
+             (:value tsd)
+             (number? (:value tsd))
+             (or (not (:timestamp tsd)) (parse-iso (:timestamp tsd))))
+    (-> (select-keys tsd [:metric-name, :timestamp, :value, :dimensions])
+        (update-in [:timestamp] #(format-iso (if % (parse-iso %) (time/now))))
+        (assoc :user-id  user-id)
+        )))
 
 (defn- receive-tsds [buffer user-id tsd-seq]
   (letfn [(reduce-fn [{:keys [succ, failures] :as result} tsd]
             (try
-              (cond
-               (not (validate-tsd tsd))
-               (do
-                 (log/warn "discard TSD because illegal format:" tsd)
-                 (update-in result [:failure, :illegal-format] #(if % (inc %) 1)))
-               (not (chunk-buffer/write buffer
-                                        (format-minute tsd)
-                                        (json/generate-string
-                                         (assoc
-                                             (merge {:timestamp "default-timestamp"} (select-keys tsd [:id, :value, :timestamp]))
-                                           :user-id user-id)
-                                         )))
-               (do
-                 (log/warn "discard TSD because failed push to buffer")
-                 (update-in result [:failure, :service-internal-error] #(if % (inc %) 1)))
-               :else (update-in result [:success] inc))
-              (catch Exception e (update-in result [:failure, :service-internal-error] #(if % (inc %) 1)))
-              )
-            )]
-    
+              (let [validated-tsd (validate-tsd user-id tsd)]
+                (cond
+
+                 ;;; validate tsd
+                 (not validated-tsd)
+                 (do
+                   (log/warn "discard TSD because illegal format:" tsd)
+                   (update-in result [:failure, :illegal-format] #(if % (inc %) 1)))
+
+                 ;;; push to buffer
+                 (not (chunk-buffer/write buffer
+                                          (format-minute (:timestamp tsd))
+                                          (json/generate-string validated-tsd)))
+                  (do
+                    (log/warn "discard TSD because failed push to buffer")
+                    (update-in result [:failure, :service-internal-error] #(if % (inc %) 1)))
+
+                  :else
+                  (update-in result [:success] inc)
+                 ))
+              (catch Exception e
+                (do
+                  (log/warn e)
+                  (update-in result [:failure, :service-internal-error] #(if % (inc %) 1))))
+              ))]
+
     (reduce reduce-fn {:success 0, :failure {}} tsd-seq)))
 
 (defn- mk-app [buffer]

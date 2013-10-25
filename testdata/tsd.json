@@ -1,11 +1,15 @@
 [
 {
-    "id" : "tsdinstance1",
-    "timestamp" : "2012-01-19T19:05:01-05:00",
+    "metric-name" : "tsdinstance1",
     "value" : 100
 },
 {
-    "id" : "tsdinstance1",
-    "value" : 100
+    "metric-name" : "tsdinstance1",
+    "timestamp" : "2012-01-19T19:05:01-05:00",
+    "value" : 100,
+    "dimensions" : {
+        "host" : "web01c",
+        "method" : "getOjb"
+    }
 }
 ]

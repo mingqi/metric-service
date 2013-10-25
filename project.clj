@@ -12,5 +12,6 @@
                  [org.apache.hadoop/hadoop-core "0.20.2"]
                  [org.clojure/tools.cli "0.2.4"]
                  [org.clojure/tools.nrepl "0.2.3"]
+                 [clj-time "0.6.0"]
                  ]
   :main monitorat.metric-service)
