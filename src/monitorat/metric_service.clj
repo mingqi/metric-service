@@ -145,7 +145,7 @@
 
 (defn- mk-app [buffer]
   (let [app-routes (routes
-          (POST "/spy/tsds" {body :body, user-id :user-id}
+          (POST "/tsds" {body :body, user-id :user-id}
                 (try
                   (if-let [tsd-seq (json/parse-stream (io/reader body) true)]
                     (restful/json-response (receive-tsds buffer user-id tsd-seq))
