@@ -14,5 +14,6 @@
                  [org.clojure/tools.nrepl "0.2.3"]
                  [clj-time "0.6.0"]
                  [clj-http "0.7.7"]
+                 [clojure-ini "0.0.1"]
                  ]
   :main monitorat.metric-service)
