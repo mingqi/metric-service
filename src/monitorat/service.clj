@@ -1,8 +1,10 @@
-(ns monitorat.metric-service
+(ns monitorat.service
   (:gen-class)
-  (:require [monitorat.tsd :as tsd]
+  (:require [monitorat
+             [tsd :as tsd]
+             [restful :as restful]
+             [metric :as metric]]
             [clojure-ini.core :as ini]
-            [monitorat.restful :as restful]
             [compojure.handler :as handler]
             [taoensso.timbre :as log]
             [clojure.tools.nrepl.server :as nrepl]
@@ -21,7 +23,8 @@
 
 
 (defroutes app-routes
-  (POST "/tsds" [:as r] tsd/receive)
+  (POST "/tsds" [:as r] (tsd/handler r))
+  (GET "/metric" [:as r] (metric/handler r))
   )
 
 (defn app []
@@ -34,7 +37,7 @@
 (defn -main [& args]
   (let [[opts _ help]
         (cli args
-             ["-c " "--config" "the config file"]
+             ["-c" "--config" "the config file"]
              )]
     
     (when-not (:config opts)
@@ -43,5 +46,6 @@
 
     (swap! configs merge (ini/read-ini (:config opts) :keywordize? true :comment-char \#))
 
+    (metric/set-mongodb!)
     (nrepl/start-server :port 5555)
     (jetty/run-jetty ( app) {:port (Integer. (:port @configs))} )))

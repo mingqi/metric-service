@@ -15,5 +15,6 @@
                  [clj-time "0.6.0"]
                  [clj-http "0.7.7"]
                  [clojure-ini "0.0.1"]
+                 [com.novemberain/monger "1.5.0"]
                  ]
-  :main monitorat.metric-service)
+  :main monitorat.service)

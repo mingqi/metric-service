@@ -165,7 +165,7 @@
       ))))
 
 
-(defn receive [ request ]
+(defn handler[ request ]
   (let [{:keys [user-id body]} request
         buffer (get-buffer)]
            (try
